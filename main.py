@@ -6,9 +6,35 @@ import time
 from tqdm import tqdm
 
 
+class HttpException(Exception):
+
+    """Exception class, raise it, when API returns an error"""
+
+    def __init__(self, status, message=''):
+        self.status = status
+        self.message = message
+
+    def __str__(self):
+        return f'http error: {self.status}\n{self.message}'
+
+
+class ApiBasic:
+
+    base_url = ''
+
+    def _send_request(self, http_method, uri_path, params=None, json=None, response_type=None):
+
+        response = requests.request(http_method, f'{self.base_url}/{uri_path}', params=params, json=json)
+        if response.status_code >= 400:
+            raise HttpException(response.status_code, response.text)
+        if response_type == json:
+            response = response.json()
+        return response
+
+
 class VK:
 
-    API_base_url = 'https://api.vk.com/method/'
+    base_url = 'https://api.vk.com/method/'
     yandex_base_url = 'https://cloud-api.yandex.net/'
 
     def __init__(self, access_token, user_id, yandex_token, version='5.199'):
@@ -20,7 +46,7 @@ class VK:
 
     def users_info(self):
         params = {'user_ids': self.id}
-        response = requests.get(self.API_base_url + 'users.get', params={**self.params, **params})
+        response = requests.get(self.base_url + 'users.get', params={**self.params, **params})
         return response.json()
 
     def create_folder(self):
@@ -56,27 +82,26 @@ class VK:
             'count': count,
             'v': self.version
         }
-        response = requests.get(self.API_base_url + 'photos.get', params={**self.params, **params})
+        response = requests.get(self.base_url + 'photos.get', params={**self.params, **params})
+        if response.status_code >= 400:
+            raise HttpException(response.status_code, response.text)
 
         list_urls = []
         check_names = []
         today = f'({str(date.today())})'
 
-        if response.status_code == 200:
-            print('Success')
-            for list_params in tqdm(response.json()['response']['items'], desc='Get names and urls'):
-                if list_params['likes']['count'] in check_names:
-                    list_urls.append([str(list_params['likes']['count']) + today,
-                                      list_params.get('sizes', '')[-1]['url'],
-                                      list_params.get('sizes', '')[-1]['type']])
-                else:
-                    list_urls.append([list_params['likes']['count'],
-                                      list_params.get('sizes', '')[-1]['url'],
-                                      list_params.get('sizes', '')[-1]['type']])
-                    check_names.append(list_params['likes']['count'])
-                time.sleep(0.075)
-        else:
-            return response.status_code
+        print('Success')
+        for list_params in tqdm(response.json()['response']['items'], desc='Get names and urls'):
+            if list_params['likes']['count'] in check_names:
+                list_urls.append([str(list_params['likes']['count']) + today,
+                                  list_params.get('sizes', '')[-1]['url'],
+                                  list_params.get('sizes', '')[-1]['type']])
+            else:
+                list_urls.append([list_params['likes']['count'],
+                                  list_params.get('sizes', '')[-1]['url'],
+                                  list_params.get('sizes', '')[-1]['type']])
+                check_names.append(list_params['likes']['count'])
+            time.sleep(0.075)
 
         # contain info about all photos
         photos_info = [{'file_name': '', 'size': ''} for _ in range(len(list_urls))]
@@ -97,6 +122,10 @@ class VK:
             self.upload_photos(file[0], file[1])
             time.sleep(0.01)
         return photos_info
+
+
+class YandexApi(ApiBasic):
+    base_url = 'https://cloud-api.yandex.net/v1/disk'
 
 
 config = configparser.ConfigParser()
